@@ -1,0 +1,220 @@
+from flask import Flask, jsonify, request
+import threading
+import random
+import time
+
+app = Flask(__name__)
+
+# ----------------------------
+# CONFIGURATION
+# ----------------------------
+SIMULATION_INTERVAL = 5  # seconds
+
+# ----------------------------
+# THRESHOLDS
+# ----------------------------
+MIN_OXYGEN = 88
+MAX_OXYGEN = 100
+
+MIN_HR = 30
+MAX_HR = 200
+
+MIN_TEMP = 35.0
+MAX_TEMP = 42.0
+
+BP_SYS_CRITICAL = {"male": (80, 180), "female": (80, 170)}
+BP_DIA_CRITICAL = {"male": (50, 110), "female": (50, 105)}
+
+# ----------------------------
+# INITIAL PATIENTS
+# ----------------------------
+patients = [
+    # Normal patient
+    {
+        "id": 1,
+        "name": "Emily Johnson",
+        "age": 30,
+        "gender": "female",
+        "heart_rate": 75,
+        "blood_pressure_systolic": 115,
+        "blood_pressure_diastolic": 75,
+        "temperature": 36.8,
+        "oxygen_saturation": 98,
+        "weight_kg": 60,
+        "city": "New York"
+    },
+    # Very overweight, multiple critical values
+    {
+        "id": 2,
+        "name": "Michael Smith",
+        "age": 55,
+        "gender": "male",
+        "heart_rate": 95,
+        "blood_pressure_systolic": 190,
+        "blood_pressure_diastolic": 120,
+        "temperature": 38.5,
+        "oxygen_saturation": 82,
+        "weight_kg": 120,
+        "city": "Los Angeles"
+    },
+    # Very underweight, high heart rate, low BP
+    {
+        "id": 3,
+        "name": "Samantha Lee",
+        "age": 25,
+        "gender": "female",
+        "heart_rate": 145,
+        "blood_pressure_systolic": 85,
+        "blood_pressure_diastolic": 50,
+        "temperature": 35.5,
+        "oxygen_saturation": 92,
+        "weight_kg": 40,
+        "city": "Chicago"
+    }
+]
+
+# ----------------------------
+# HELPER FUNCTIONS
+# ----------------------------
+def get_next_id():
+    existing_ids = sorted([p["id"] for p in patients])
+    new_id = 1
+    for eid in existing_ids:
+        if eid == new_id:
+            new_id += 1
+        else:
+            break
+    return new_id
+
+def check_vitals(patient):
+    alerts = []
+    if patient["oxygen_saturation"] < MIN_OXYGEN:
+        alerts.append(f"⚠️ Low oxygen saturation: {patient['oxygen_saturation']:.1f}%")
+    if not (MIN_HR <= patient["heart_rate"] <= MAX_HR):
+        alerts.append(f"⚠️ Abnormal heart rate: {patient['heart_rate']}")
+    if not (BP_SYS_CRITICAL[patient["gender"]][0] <= patient["blood_pressure_systolic"] <= BP_SYS_CRITICAL[patient["gender"]][1]):
+        alerts.append(f"⚠️ Abnormal systolic BP: {patient['blood_pressure_systolic']}")
+    if not (BP_DIA_CRITICAL[patient["gender"]][0] <= patient["blood_pressure_diastolic"] <= BP_DIA_CRITICAL[patient["gender"]][1]):
+        alerts.append(f"⚠️ Abnormal diastolic BP: {patient['blood_pressure_diastolic']}")
+    if not (MIN_TEMP <= patient["temperature"] <= MAX_TEMP):
+        alerts.append(f"⚠️ Abnormal temperature: {patient['temperature']:.1f}°C")
+    for alert in alerts:
+        print(f"Patient {patient['name']}: {alert}")
+
+# ----------------------------
+# SIMULATION THREAD
+# ----------------------------
+def simulate_vitals():
+    while True:
+        for patient in patients:
+            patient["oxygen_saturation"] += random.uniform(-1, 1)
+            patient["oxygen_saturation"] = max(80, min(MAX_OXYGEN, patient["oxygen_saturation"]))
+
+            patient["heart_rate"] += random.randint(-3, 3)
+            patient["heart_rate"] = max(MIN_HR, min(MAX_HR, patient["heart_rate"]))
+
+            patient["blood_pressure_systolic"] += random.randint(-2, 2)
+            patient["blood_pressure_systolic"] = max(50, min(200, patient["blood_pressure_systolic"]))
+
+            patient["blood_pressure_diastolic"] += random.randint(-1, 1)
+            patient["blood_pressure_diastolic"] = max(40, min(120, patient["blood_pressure_diastolic"]))
+
+            patient["temperature"] += random.uniform(-0.2, 0.2)
+            patient["temperature"] = max(34, min(42, patient["temperature"]))
+
+            check_vitals(patient)
+        time.sleep(SIMULATION_INTERVAL)
+
+threading.Thread(target=simulate_vitals, daemon=True).start()
+
+# ----------------------------
+# CRUD API
+# ----------------------------
+@app.route("/patients/", methods=["GET"])
+def get_patients():
+    return jsonify(patients), 200
+
+@app.route("/patients/<int:id>", methods=["GET"])
+def get_patient(id):
+    for p in patients:
+        if p["id"] == id:
+            return jsonify(p), 200
+    return jsonify({"message": "Patient not found"}), 404
+
+@app.route("/patients/", methods=["POST"])
+def add_patient():
+    data = request.json
+    required_fields = ["name","age","gender","heart_rate","blood_pressure_systolic",
+                       "blood_pressure_diastolic","temperature","oxygen_saturation","weight_kg","city"]
+    if not all(field in data for field in required_fields):
+        return jsonify({"message": "Missing required fields"}), 400
+    new_id = get_next_id()
+    new_patient = {"id": new_id, **data}
+    patients.append(new_patient)
+    check_vitals(new_patient)
+    return jsonify(new_patient), 201
+
+@app.route("/patients/<int:id>", methods=["PUT"])
+def update_patient(id):
+    data = request.json
+    for patient in patients:
+        if patient["id"] == id:
+            patient.update(data)
+            check_vitals(patient)
+            return jsonify(patient), 200
+    return jsonify({"message": "Patient not found"}), 404
+
+@app.route("/patients/<int:id>", methods=["PATCH"])
+def patch_patient(id):
+    data = request.json
+    for patient in patients:
+        if patient["id"] == id:
+            patient.update(data)
+            check_vitals(patient)
+            return jsonify(patient), 200
+    return jsonify({"message": "Patient not found"}), 404
+
+@app.route("/patients/<int:id>", methods=["DELETE"])
+def delete_patient(id):
+    global patients
+    initial_len = len(patients)
+    patients = [p for p in patients if p["id"] != id]
+    if len(patients) < initial_len:
+        return jsonify({"deleted_id": id}), 200
+    return jsonify({"message": "Patient not found"}), 404
+
+@app.route("/patients/<int:id>/update", methods=["POST"])
+def sensor_update(id):
+    data = request.json
+    for patient in patients:
+        if patient["id"] == id:
+            for key in ["heart_rate","blood_pressure_systolic","blood_pressure_diastolic","temperature","oxygen_saturation"]:
+                if key in data:
+                    patient[key] = data[key]
+            check_vitals(patient)
+            return jsonify(patient), 200
+    return jsonify({"message": "Patient not found"}), 404
+
+@app.route("/patients/count", methods=["GET"])
+def count_patients():
+    return jsonify({"total_patients": len(patients)}), 200
+
+@app.route("/", methods=["GET"])
+def docs():
+    return jsonify({
+        "GET /patients/": "List all patients",
+        "GET /patients/<id>": "Get patient by ID",
+        "POST /patients/": "Add new patient",
+        "PUT /patients/<id>": "Update all fields",
+        "PATCH /patients/<id>": "Update some fields",
+        "DELETE /patients/<id>": "Delete patient",
+        "POST /patients/<id>/update": "External sensor updates vitals",
+        "GET /patients/count": "Get number of patients",
+        "Simulation": "Vitals updated every 5 seconds; alerts if abnormal"
+    }), 200
+
+# ----------------------------
+# RUN SERVER
+# ----------------------------
+if __name__ == "__main__":
+    app.run(debug=True)
