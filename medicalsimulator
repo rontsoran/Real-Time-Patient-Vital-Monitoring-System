@@ -1,215 +1,175 @@
 classdef medicalsimulator < matlab.apps.AppBase
 
-    % Properties that correspond to app components
+    % App components
     properties (Access = public)
-        UIFigure                 matlab.ui.Figure
-        GridLayout               matlab.ui.container.GridLayout
-        LeftPanel                matlab.ui.container.Panel
-        PatinetDropDown          matlab.ui.control.DropDown
-        PatinetDropDownLabel     matlab.ui.control.Label
-        Lamp                     matlab.ui.control.Lamp
-        RefreshButton            matlab.ui.control.Button
-        StatusLabel              matlab.ui.control.Label
-        CenterPanel              matlab.ui.container.Panel
-        blood_pressure_systolic  matlab.ui.control.UIAxes
-        Oxygen                   matlab.ui.control.UIAxes
-        blood_pressure_systolic_diastolic  matlab.ui.control.UIAxes
-        heart_rate               matlab.ui.control.UIAxes
-        RightPanel               matlab.ui.container.Panel
+        UIFigure
+        GridLayout
+        LeftPanel
+        PatientDropDown
+        PatientLabel
+        Lamp
+        RefreshButton
+        StatusLabel
+        CenterPanel
+        blood_pressure_systolic
+        Oxygen
+        blood_pressure_systolic_diastolic
+        heart_rate
+        RightPanel
     end
 
-    % Properties that correspond to apps with auto-reflow
+    % Auto-reflow properties
     properties (Access = private)
         onePanelWidth = 576;
         twoPanelWidth = 768;
     end
 
-properties (Access = private)
-    PatientIDs
-    TimerObj
-end
-
-methods (Access = private)
-
-    function loadPatients(app)
-        try
-            % Attempt to fetch patient list from the server
-            data = webread('http://127.0.0.1:5000/patients/');
-            names = string({data.name});
-            app.PatientIDs = [data.id];
-            app.PatinetDropDown.Items = names;
-            app.PatinetDropDown.Value = names(1);
-            app.StatusLabel.Text = sprintf('Loaded patient: %s', names(1));
-
-            % ✅ Server connected successfully – turn Lamp green
-            app.Lamp.Color = [0 1 0];
-
-        catch ME
-            % ❌ Server connection failed – show error and turn Lamp red
-            app.StatusLabel.Text = ['Server error: ' ME.message];
-            app.Lamp.Color = [1 0 0];
-        end
+    % Private properties
+    properties (Access = private)
+        PatientIDs
+        TimerObj
+        BASE_URL = 'http://myserver.com/api'; % Generic server URL
     end
 
-    function refreshVitals(app)
-        try
-            % Get selected patient
-            selectedName = app.PatinetDropDown.Value;
-            if isempty(selectedName), return; end
-            idx = find(strcmp(app.PatinetDropDown.Items, selectedName),1);
-            if isempty(idx), return; end
-            patientID = app.PatientIDs(idx);
-
-            % Fetch latest patient data
-            patient = webread(sprintf('http://127.0.0.1:5000/patients/%d', patientID));
-
-            % -------------------------------
-            % Determine critical BP ranges based on gender
-            % -------------------------------
-            if strcmpi(patient.gender,'male')
-                bp_sys_range = [80 180];
-                bp_dia_range = [50 110];
-            else
-                bp_sys_range = [80 170];
-                bp_dia_range = [50 105];
-            end
-
-            % -------------------------------
-            % Plot Oxygen Saturation
-            % -------------------------------
-            cla(app.Oxygen);
-            plot(app.Oxygen, patient.oxygen_saturation, 'bo', 'MarkerSize',10,'MarkerFaceColor','b');
-            title(app.Oxygen,'Oxygen Saturation');
-            xlabel(app.Oxygen,'Measurement ');
-            app.Oxygen.XTickLabel = {};
-            
-            ylabel(app.Oxygen,'Oxygen (%)');
-            grid(app.Oxygen,'on');
-            % Threshold lines
-            yline(app.Oxygen, 88, '--r', 'Min Safe','LabelHorizontalAlignment','left');
-            yline(app.Oxygen, 100, '--g', 'Max','LabelHorizontalAlignment','left');
-
-            % -------------------------------
-            % Plot Temperature
-            % -------------------------------
-            cla(app.blood_pressure_systolic);
-            plot(app.blood_pressure_systolic, patient.temperature, 'ro', 'MarkerSize',10,'MarkerFaceColor','r');
-            title(app.blood_pressure_systolic,'Body Temperature');
-            xlabel(app.blood_pressure_systolic,'Measurement ');
-            app.blood_pressure_systolic.XTickLabel = {};
-
-            ylabel(app.blood_pressure_systolic,'Temperature (°C)');
-            grid(app.blood_pressure_systolic,'on');
-            yline(app.blood_pressure_systolic, 35.0, '--r', 'Min Safe','LabelHorizontalAlignment','left');
-            yline(app.blood_pressure_systolic, 42.0, '--g', 'Max','LabelHorizontalAlignment','left');
-
-            % -------------------------------
-            % Plot Heart Rate
-            % -------------------------------
-            cla(app.heart_rate);
-            plot(app.heart_rate, patient.heart_rate, 'go', 'MarkerSize',10,'MarkerFaceColor','g');
-            title(app.heart_rate,'Heart Rate');
-            xlabel(app.heart_rate,'Measurement ');
-            app.heart_rate.XTickLabel = {};
-
-            ylabel(app.heart_rate,'Heart Rate (bpm)');
-            grid(app.heart_rate,'on');
-            yline(app.heart_rate, 30, '--r', 'Min Safe','LabelHorizontalAlignment','left');
-            yline(app.heart_rate, 200, '--g', 'Max','LabelHorizontalAlignment','left');
-
-            % -------------------------------
-            % Plot Blood Pressure
-            % -------------------------------
-            ax = app.blood_pressure_systolic_diastolic;
-
-            % Clear old plot completely
-            cla(ax, 'reset');
-            hold(ax,'on');
-
-            % Main data
-            hSys = plot(ax, patient.blood_pressure_systolic, 'r^-','LineWidth',1.5,'MarkerSize',8,'MarkerFaceColor','r');
-            hDia = plot(ax, patient.blood_pressure_diastolic, 'bv-','LineWidth',1.5,'MarkerSize',8,'MarkerFaceColor','b');
-                        app.blood_pressure_systolic_diastolic.XTickLabel = {};
-
-            % Threshold lines (not in legend)
-            yline(ax, bp_sys_range(1), '--r','Low SYS','LabelHorizontalAlignment','left','HandleVisibility','off');
-            yline(ax, bp_sys_range(2), '--g','High SYS','LabelHorizontalAlignment','left','HandleVisibility','off');
-            yline(ax, bp_dia_range(1), ':r','Low DIA','LabelHorizontalAlignment','left','HandleVisibility','off');
-            yline(ax, bp_dia_range(2), ':g','High DIA','LabelHorizontalAlignment','left','HandleVisibility','off');
-
-            % Axes labels
-            title(ax,'Blood Pressure');
-            xlabel(ax,'Measurement ');
-            ylabel(ax,'Pressure (mmHg)');
-            grid(ax,'on');
-
-            % Legend only for Systolic & Diastolic
-            legend(ax,[hSys,hDia],{'Systolic','Diastolic'},'Location','best');
-
-            hold(ax,'off');
-
-            % -------------------------------
-            % Update status
-            % -------------------------------
-            app.StatusLabel.Text = sprintf('Patient: %s', selectedName);
-
-
-
-        catch ME
-            app.StatusLabel.Text = ['Error: ' ME.message];
-        end
-    end
-
-end
-
-
-    % Callbacks that handle component events
     methods (Access = private)
 
-        % Code that executes after component creation
-        function startupFcn(app)
-   % --- Load patients immediately ---
-    loadPatients(app);
-
-    % --- Start timer to refresh vitals every 5 seconds ---
-    app.TimerObj = timer('ExecutionMode','fixedSpacing','Period',5, ...
-                         'TimerFcn', @(~,~) refreshVitals(app));
-    start(app.TimerObj);
+        % Load patient list from server
+        function loadPatients(app)
+            try
+                data = webread([app.BASE_URL '/patients/']);
+                names = string({data.name});
+                app.PatientIDs = [data.id];
+                app.PatientDropDown.Items = names;
+                if ~isempty(names)
+                    app.PatientDropDown.Value = names(1);
+                    app.StatusLabel.Text = sprintf('Loaded patient: %s', names(1));
+                    app.Lamp.Color = [0 1 0]; % ✅ server connected
+                else
+                    app.StatusLabel.Text = 'No patients found';
+                    app.Lamp.Color = [1 0 0]; % ❌ no patients
+                end
+            catch ME
+                app.StatusLabel.Text = ['Server error: ' ME.message];
+                app.Lamp.Color = [1 0 0]; % ❌ server error
+            end
         end
 
-        % Button pushed function: RefreshButton
-        function RefreshButtonPushed(app, event)
-    try
-        % Fetch patients from server
-        data = webread('http://127.0.0.1:5000/patients/');
-        names = string({data.name});
-        app.PatientIDs = [data.id];
+        % Refresh vitals for selected patient
+        function refreshVitals(app)
+            try
+                selectedName = app.PatientDropDown.Value;
+                if isempty(selectedName), return; end
+                idx = find(strcmp(app.PatientDropDown.Items, selectedName),1);
+                if isempty(idx), return; end
+                patientID = app.PatientIDs(idx);
 
-        % Update ListBox items
-        app.PatinetDropDown.Items = names;
+                % Get patient data
+                patient = webread([app.BASE_URL '/patients/' num2str(patientID)]);
 
-        % Select first patient if available
-        if ~isempty(names)
-            app.PatinetDropDown.Value = names(1);
-            app.StatusLabel.Text = sprintf('Loaded patient: %s', names(1));
-            
-            % Immediately refresh vitals for selected patient
-            app.refreshVitals();  % <- call the existing function
-        else
-            app.StatusLabel.Text = 'No patients found';
+                % Determine critical BP ranges based on gender
+                if strcmpi(patient.gender,'male')
+                    bp_sys_range = [80 180];
+                    bp_dia_range = [50 110];
+                else
+                    bp_sys_range = [80 170];
+                    bp_dia_range = [50 105];
+                end
+
+                % ---------------- Plot Oxygen ----------------
+                cla(app.Oxygen);
+                plot(app.Oxygen, patient.oxygen_saturation,'bo','MarkerSize',10,'MarkerFaceColor','b');
+                title(app.Oxygen,'Oxygen Saturation');
+                xlabel(app.Oxygen,'Measurement');
+                app.Oxygen.XTickLabel = {};
+                ylabel(app.Oxygen,'Oxygen (%)');
+                grid(app.Oxygen,'on');
+                yline(app.Oxygen,88,'--r','Min Safe','LabelHorizontalAlignment','left');
+                yline(app.Oxygen,100,'--g','Max','LabelHorizontalAlignment','left');
+
+                % ---------------- Plot Temperature ----------------
+                cla(app.blood_pressure_systolic);
+                plot(app.blood_pressure_systolic, patient.temperature,'ro','MarkerSize',10,'MarkerFaceColor','r');
+                title(app.blood_pressure_systolic,'Body Temperature');
+                xlabel(app.blood_pressure_systolic,'Measurement');
+                app.blood_pressure_systolic.XTickLabel = {};
+                ylabel(app.blood_pressure_systolic,'Temperature (°C)');
+                grid(app.blood_pressure_systolic,'on');
+                yline(app.blood_pressure_systolic,35,'--r','Min Safe','LabelHorizontalAlignment','left');
+                yline(app.blood_pressure_systolic,42,'--g','Max','LabelHorizontalAlignment','left');
+
+                % ---------------- Plot Heart Rate ----------------
+                cla(app.heart_rate);
+                plot(app.heart_rate, patient.heart_rate,'go','MarkerSize',10,'MarkerFaceColor','g');
+                title(app.heart_rate,'Heart Rate');
+                xlabel(app.heart_rate,'Measurement');
+                app.heart_rate.XTickLabel = {};
+                ylabel(app.heart_rate,'Heart Rate (bpm)');
+                grid(app.heart_rate,'on');
+                yline(app.heart_rate,30,'--r','Min Safe','LabelHorizontalAlignment','left');
+                yline(app.heart_rate,200,'--g','Max','LabelHorizontalAlignment','left');
+
+                % ---------------- Plot Blood Pressure ----------------
+                ax = app.blood_pressure_systolic_diastolic;
+                cla(ax,'reset'); % Clear previous plot
+                hold(ax,'on');
+                hSys = plot(ax, patient.blood_pressure_systolic,'r^-','LineWidth',1.5,'MarkerSize',8,'MarkerFaceColor','r');
+                hDia = plot(ax, patient.blood_pressure_diastolic,'bv-','LineWidth',1.5,'MarkerSize',8,'MarkerFaceColor','b');
+                ax.XTickLabel = {};
+                % Threshold lines
+                yline(ax,bp_sys_range(1),'--r','Low SYS','LabelHorizontalAlignment','left','HandleVisibility','off');
+                yline(ax,bp_sys_range(2),'--g','High SYS','LabelHorizontalAlignment','left','HandleVisibility','off');
+                yline(ax,bp_dia_range(1),':r','Low DIA','LabelHorizontalAlignment','left','HandleVisibility','off');
+                yline(ax,bp_dia_range(2),':g','High DIA','LabelHorizontalAlignment','left','HandleVisibility','off');
+                title(ax,'Blood Pressure');
+                xlabel(ax,'Measurement');
+                ylabel(ax,'Pressure (mmHg)');
+                grid(ax,'on');
+                legend(ax,[hSys,hDia],{'Systolic','Diastolic'},'Location','best');
+                hold(ax,'off');
+
+                % Update status label
+                app.StatusLabel.Text = sprintf('Patient: %s', selectedName);
+
+            catch ME
+                app.StatusLabel.Text = ['Error: ' ME.message];
+            end
         end
-
-    catch ME
-        app.StatusLabel.Text = ['Error refreshing: ' ME.message];
     end
+
+    % Component callbacks
+    methods (Access = private)
+
+        function startupFcn(app)
+            loadPatients(app);
+            app.TimerObj = timer('ExecutionMode','fixedSpacing','Period',5, ...
+                                 'TimerFcn', @(~,~) refreshVitals(app));
+            start(app.TimerObj);
         end
 
-        % Changes arrangement of the app based on UIFigure width
+        function RefreshButtonPushed(app, event)
+            try
+                data = webread([app.BASE_URL '/patients/']);
+                names = string({data.name});
+                app.PatientIDs = [data.id];
+                app.PatientDropDown.Items = names;
+
+                if ~isempty(names)
+                    app.PatientDropDown.Value = names(1);
+                    app.StatusLabel.Text = sprintf('Loaded patient: %s', names(1));
+                    app.refreshVitals();
+                else
+                    app.StatusLabel.Text = 'No patients found';
+                end
+            catch ME
+                app.StatusLabel.Text = ['Error refreshing: ' ME.message];
+            end
+        end
+
+        % Adjust layout depending on window width
         function updateAppLayout(app, event)
             currentFigureWidth = app.UIFigure.Position(3);
-            if(currentFigureWidth <= app.onePanelWidth)
-                % Change to a 3x1 grid
-                app.GridLayout.RowHeight = {480, 480, 480};
+            if currentFigureWidth <= app.onePanelWidth
+                app.GridLayout.RowHeight = {480,480,480};
                 app.GridLayout.ColumnWidth = {'1x'};
                 app.CenterPanel.Layout.Row = 1;
                 app.CenterPanel.Layout.Column = 1;
@@ -217,10 +177,9 @@ end
                 app.LeftPanel.Layout.Column = 1;
                 app.RightPanel.Layout.Row = 3;
                 app.RightPanel.Layout.Column = 1;
-            elseif (currentFigureWidth > app.onePanelWidth && currentFigureWidth <= app.twoPanelWidth)
-                % Change to a 2x2 grid
-                app.GridLayout.RowHeight = {480, 480};
-                app.GridLayout.ColumnWidth = {'1x', '1x'};
+            elseif currentFigureWidth <= app.twoPanelWidth
+                app.GridLayout.RowHeight = {480,480};
+                app.GridLayout.ColumnWidth = {'1x','1x'};
                 app.CenterPanel.Layout.Row = 1;
                 app.CenterPanel.Layout.Column = [1,2];
                 app.LeftPanel.Layout.Row = 2;
@@ -228,9 +187,8 @@ end
                 app.RightPanel.Layout.Row = 2;
                 app.RightPanel.Layout.Column = 2;
             else
-                % Change to a 1x3 grid
                 app.GridLayout.RowHeight = {'1x'};
-                app.GridLayout.ColumnWidth = {203, '1x', 176};
+                app.GridLayout.ColumnWidth = {203,'1x',176};
                 app.LeftPanel.Layout.Row = 1;
                 app.LeftPanel.Layout.Column = 1;
                 app.CenterPanel.Layout.Row = 1;
@@ -241,135 +199,18 @@ end
         end
     end
 
-    % Component initialization
-    methods (Access = private)
-
-        % Create UIFigure and components
-        function createComponents(app)
-
-            % Create UIFigure and hide until all components are created
-            app.UIFigure = uifigure('Visible', 'off');
-            app.UIFigure.AutoResizeChildren = 'off';
-            app.UIFigure.Position = [100 100 860 480];
-            app.UIFigure.Name = 'MATLAB App';
-            app.UIFigure.SizeChangedFcn = createCallbackFcn(app, @updateAppLayout, true);
-
-            % Create GridLayout
-            app.GridLayout = uigridlayout(app.UIFigure);
-            app.GridLayout.ColumnWidth = {203, '1x', 176};
-            app.GridLayout.RowHeight = {'1x'};
-            app.GridLayout.ColumnSpacing = 0;
-            app.GridLayout.RowSpacing = 0;
-            app.GridLayout.Padding = [0 0 0 0];
-            app.GridLayout.Scrollable = 'on';
-
-            % Create LeftPanel
-            app.LeftPanel = uipanel(app.GridLayout);
-            app.LeftPanel.Layout.Row = 1;
-            app.LeftPanel.Layout.Column = 1;
-
-            % Create StatusLabel
-            app.StatusLabel = uilabel(app.LeftPanel);
-            app.StatusLabel.FontSize = 8;
-            app.StatusLabel.Position = [4 1 166 20];
-            app.StatusLabel.Text = 'StatusLabel';
-
-            % Create RefreshButton
-            app.RefreshButton = uibutton(app.LeftPanel, 'push');
-            app.RefreshButton.ButtonPushedFcn = createCallbackFcn(app, @RefreshButtonPushed, true);
-            app.RefreshButton.Position = [75 417 95 24];
-            app.RefreshButton.Text = 'Refresh';
-
-            % Create Lamp
-            app.Lamp = uilamp(app.LeftPanel);
-            app.Lamp.Position = [183 1 20 20];
-
-            % Create PatinetDropDownLabel
-            app.PatinetDropDownLabel = uilabel(app.LeftPanel);
-            app.PatinetDropDownLabel.HorizontalAlignment = 'right';
-            app.PatinetDropDownLabel.Position = [19 448 42 22];
-            app.PatinetDropDownLabel.Text = 'Patinet';
-
-            % Create PatinetDropDown
-            app.PatinetDropDown = uidropdown(app.LeftPanel);
-            app.PatinetDropDown.Items = {};
-            app.PatinetDropDown.Position = [75 448 95 22];
-            app.PatinetDropDown.Value = {};
-
-            % Create CenterPanel
-            app.CenterPanel = uipanel(app.GridLayout);
-            app.CenterPanel.Layout.Row = 1;
-            app.CenterPanel.Layout.Column = 2;
-
-            % Create heart_rate
-            app.heart_rate = uiaxes(app.CenterPanel);
-            title(app.heart_rate, 'Heart Rate')
-            xlabel(app.heart_rate, 'X')
-            ylabel(app.heart_rate, 'Y')
-            zlabel(app.heart_rate, 'Z')
-            app.heart_rate.PlotBoxAspectRatio = [1.26404494382022 1 1];
-            app.heart_rate.Position = [7 26 223 195];
-
-            % Create blood_pressure_systolic_diastolic
-            app.blood_pressure_systolic_diastolic = uiaxes(app.CenterPanel);
-            title(app.blood_pressure_systolic_diastolic, 'Systolic and Diastolic BP')
-            xlabel(app.blood_pressure_systolic_diastolic, 'X')
-            ylabel(app.blood_pressure_systolic_diastolic, 'Y')
-            zlabel(app.blood_pressure_systolic_diastolic, 'Z')
-            app.blood_pressure_systolic_diastolic.PlotBoxAspectRatio = [1.26404494382022 1 1];
-            app.blood_pressure_systolic_diastolic.Position = [246 25 228 200];
-
-            % Create Oxygen
-            app.Oxygen = uiaxes(app.CenterPanel);
-            title(app.Oxygen, 'Saturation ')
-            xlabel(app.Oxygen, 'X')
-            ylabel(app.Oxygen, 'Y')
-            zlabel(app.Oxygen, 'Z')
-            app.Oxygen.Position = [246 273 228 197];
-
-            % Create blood_pressure_systolic
-            app.blood_pressure_systolic = uiaxes(app.CenterPanel);
-            title(app.blood_pressure_systolic, 'Tempature')
-            xlabel(app.blood_pressure_systolic, 'X')
-            ylabel(app.blood_pressure_systolic, 'Y')
-            zlabel(app.blood_pressure_systolic, 'Z')
-            app.blood_pressure_systolic.Position = [7 273 228 197];
-
-            % Create RightPanel
-            app.RightPanel = uipanel(app.GridLayout);
-            app.RightPanel.Layout.Row = 1;
-            app.RightPanel.Layout.Column = 3;
-
-            % Show the figure after all components are created
-            app.UIFigure.Visible = 'on';
-        end
-    end
-
     % App creation and deletion
     methods (Access = public)
 
-        % Construct app
         function app = medicalsimulator
-
-            % Create UIFigure and components
-            createComponents(app)
-
-            % Register the app with App Designer
+            createComponents(app);
             registerApp(app, app.UIFigure)
-
-            % Execute the startup function
-            runStartupFcn(app, @startupFcn)
-
-            if nargout == 0
-                clear app
-            end
+            runStartupFcn(app,@startupFcn)
+            if nargout==0, clear app; end
         end
 
-        % Code that executes before app deletion
         function delete(app)
-
-            % Delete UIFigure when app is deleted
-            delete(app.UIFigure)
+            delete(app.UIFigure);
         end
     end
 end
