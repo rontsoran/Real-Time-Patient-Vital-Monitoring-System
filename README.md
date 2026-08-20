@@ -1,101 +1,120 @@
-Real-Time Patient Monitoring System – Flask API & MATLAB Dashboard
+# Real-Time Patient Monitoring System – Flask API & MATLAB Dashboard
 
-This project implements a real-time medical monitoring system consisting of two main components:
+A real-time medical monitoring system with two components:
 
-A Flask-based REST API server written in Python – responsible for simulating and managing patient data.
+- **Server** — a Flask REST API (`oxmonitor`) that simulates and manages patient vitals.
+- **Client** — a MATLAB App Designer dashboard (`medicalsimulator`) that polls the API and displays vitals live, with alerts on abnormal readings.
 
-A MATLAB App Designer dashboard – acting as a client that displays real-time patient vitals.
+Patients are managed via HTTP requests (e.g. through Postman), while the MATLAB client continuously fetches and visualizes the data — together demonstrating a full client–server architecture for a biomedical application.
 
-The Postman interface is used to add, update, or remove patients via API requests, while the MATLAB client continuously fetches and visualizes the data. Together, they demonstrate a complete Client–Server architecture suitable for real-time biomedical applications.
+## Overview
 
-Overview
+- **Server (Flask):** simulates patient vitals (SpO₂, heart rate, blood pressure, temperature) for a set of seeded patients, updating every 5 seconds, and prints alerts when a value goes outside a safe range.
+- **Client (MATLAB App):** displays vitals live, refreshes automatically, and shows a status lamp/alerts if values are abnormal.
+- **Postman (or curl):** used to add, update, delete, and query patient records through the API.
 
-Server (Flask): Simulates patient vitals (SpO₂, heart rate, blood pressure, temperature).
-Client (MATLAB App): Displays vitals live, updates automatically, and shows alerts if values are abnormal.
-Postman: Used to send POST, GET, and DELETE requests to manage patient records through the API.
+## System Architecture
 
-System Architecture
-        +-------------------+
-        |     Postman       |
-        |  (Add / Update /  |
-        |   Delete Patients)|
-        +---------+---------+
-                  |
-                  |  REST API (JSON)
-                  |
-     +------------v------------+
-     |     Flask Server        |
-     |  /patients , /<id> etc. |
-     +------------+------------+
-                  |
-                  |  webread() / webwrite()
-                  |
-     +------------v------------+
-     |   MATLAB Dashboard      |
-     |  (Real-Time Monitoring) |
-     +-------------------------+
+```
++-------------------+
+|      Postman       |
+| (Add / Update /    |
+|  Delete Patients)  |
++---------+-----------+
+          |
+          |  REST API (JSON)
+          v
++--------------------------+
+|      Flask Server        |
+|  /patients/, /<id>, etc. |
++------------+-------------+
+             |
+             |  webread() / webwrite()
+             v
++--------------------------+
+|    MATLAB Dashboard      |
+|  (Real-Time Monitoring)  |
++--------------------------+
+```
 
-API Endpoints
-Method	Endpoint	Description
-GET	/patients	Get all patients and their vitals
-GET	/patients/<id>	Get a specific patient’s data
-POST	/patients	Add or update a patient (JSON body)
-DELETE	/patients/<id>	Remove a patient
-Example JSON Payload (used in Postman)
+## API Endpoints
+
+| Method | Endpoint                    | Description                                |
+|--------|------------------------------|--------------------------------------------|
+| GET    | `/`                          | List available endpoints (docs)             |
+| GET    | `/patients/`                 | Get all patients and their vitals           |
+| GET    | `/patients/<id>`             | Get a specific patient's data               |
+| POST   | `/patients/`                 | Add a new patient (JSON body, see below)    |
+| PUT    | `/patients/<id>`             | Replace a patient's fields                  |
+| PATCH  | `/patients/<id>`             | Update some of a patient's fields           |
+| DELETE | `/patients/<id>`             | Remove a patient                            |
+| POST   | `/patients/<id>/update`      | Push new vitals from an external sensor     |
+| GET    | `/patients/count`            | Get the total number of patients            |
+
+### Example: add a patient (`POST /patients/`)
+
+```json
 {
-  "id": "102",
   "name": "Jane Doe",
+  "age": 34,
+  "gender": "female",
   "heart_rate": 82,
-  "spo2": 96,
-  "blood_pressure": "117/75",
-  "temperature": 36.6
+  "blood_pressure_systolic": 117,
+  "blood_pressure_diastolic": 75,
+  "temperature": 36.6,
+  "oxygen_saturation": 96,
+  "weight_kg": 62,
+  "city": "New York"
 }
+```
 
-Installation & Setup
+`id` is assigned automatically by the server; all other fields above are required.
 
-Clone the repository:
+## Installation & Setup
 
-git clone https://github.com/yourusername/patient-monitoring-system.git
-cd patient-monitoring-system
+**Prerequisites:** Python 3.9+, `flask`, and MATLAB with App Designer (for the client).
 
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/rontsoran/Real-Time-Patient-Vital-Monitoring-System.git
+   cd Real-Time-Patient-Vital-Monitoring-System
+   ```
 
-Install dependencies:
+2. Install dependencies:
+   ```bash
+   pip install flask
+   ```
 
-pip install -r requirements.txt
+3. Run the Flask API server:
+   ```bash
+   python oxmonitor
+   ```
+   The server listens on `http://127.0.0.1:5000`.
 
+4. Use Postman (or curl) to send GET / POST / PUT / PATCH / DELETE requests to `http://127.0.0.1:5000/patients/`.
 
-Run the Flask API server:
+5. Open `medicalsimulator` in MATLAB App Designer and run it to view the live dashboard. On first run, update the `BASE_URL` property to `http://127.0.0.1:5000` (it defaults to a placeholder URL).
 
-python app.py
+## Key Features
 
+- Real-time JSON API server built with Flask, backed by an in-memory patient list with a background simulation thread.
+- Automatic alerts (console-logged) when a patient's oxygen, heart rate, blood pressure, or temperature falls outside safe thresholds.
+- Full CRUD over patients via Postman or any HTTP client.
+- Live MATLAB dashboard that polls the API and visualizes vitals with status indicators.
+- Easy to extend with real sensors (via `POST /patients/<id>/update`) or a persistent database.
 
-Open Postman to send POST / GET requests to http://localhost:5000/patients.
+## Typical Workflow
 
-Run the MATLAB App Designer client to view the vitals dashboard in real-time.
+1. Add or update a patient via `POST /patients/` in Postman.
+2. The MATLAB app automatically refreshes and shows the updated vitals.
+3. Delete or modify patients from Postman as needed.
+4. (Optional) Extend the alert thresholds or add new vital signs.
 
-Key Features
+## Notes / Known Limitations
 
-Real-time JSON API server built with Flask
+- Patient data is stored in memory only — it resets whenever the server restarts.
+- The server runs without authentication and is intended for local/demo use, not production deployment.
 
-Seamless integration with MATLAB dashboards
+## License
 
-Manage patients via Postman (create, update, delete)
-
-Live data visualization and status indicators
-
-Easy to extend with real sensors or databases
-
-Typical Workflow
-
-Add or update a patient in Postman using POST /patients.
-
-MATLAB App automatically refreshes and shows updated vitals.
-
-Delete or modify patients from Postman as needed.
-
-(Optional) Add alerts for low oxygen, high temperature, etc.
-
-License
-
-This project is released under the MIT License.
-Feel free to use it for learning, research, or development purposes.
+This project is released under the MIT License. Feel free to use it for learning, research, or development purposes.
